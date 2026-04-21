@@ -1,3 +1,12 @@
+import {
+  fetchUserData,
+  upsertProfile,
+  setActiveProfileRemote,
+  deleteProfileRemote,
+  toggleWorkoutRemote,
+  addSwapRemote,
+} from './lib/supabase'
+
 const STORAGE_KEY = 'ironman-tracker'
 
 export interface Profile {
@@ -20,7 +29,7 @@ export interface UserData {
   swaps: Record<string, SwapMap>
 }
 
-function defaultData(): UserData {
+export function defaultData(): UserData {
   return { profiles: [], activeProfile: null, completed: {}, swaps: {} }
 }
 
@@ -38,6 +47,36 @@ export function load(): UserData {
 
 export function save(data: UserData) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
+}
+
+export async function loadRemote(): Promise<UserData> {
+  try {
+    const data = await fetchUserData()
+    save(data)
+    return data
+  } catch {
+    return load()
+  }
+}
+
+export function syncAddProfile(name: string, startDate: string, isFirst: boolean) {
+  upsertProfile(name, startDate, isFirst).catch(() => {})
+}
+
+export function syncSetActiveProfile(name: string) {
+  setActiveProfileRemote(name).catch(() => {})
+}
+
+export function syncDeleteProfile(name: string) {
+  deleteProfileRemote(name).catch(() => {})
+}
+
+export function syncToggleWorkout(profileName: string, workoutId: string, completing: boolean) {
+  toggleWorkoutRemote(profileName, workoutId, completing).catch(() => {})
+}
+
+export function syncSwapWorkouts(profileName: string, weekNum: number, idA: string, idB: string) {
+  addSwapRemote(profileName, weekNum, idA, idB).catch(() => {})
 }
 
 export function getCompletedIds(data: UserData, profile: string): Set<string> {

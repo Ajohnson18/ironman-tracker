@@ -7,6 +7,9 @@ import { SportIcon, ClipboardIcon, ChartIcon, UserIcon, CheckIcon, SwapIcon, XIc
 import { AnimatedNumber, AnimatedPercent, AnimatedProgressBar } from './components/AnimatedNumber'
 import { ConfettiCanvas, useConfetti } from './components/Confetti'
 import { ProgressRing3D } from './components/ProgressRing3D'
+import { Auth } from './components/Auth'
+import { supabase } from './lib/supabase'
+import type { Session } from '@supabase/supabase-js'
 
 const SPORT_COLOR: Record<Sport, string> = {
   swim: 'text-cyan-400',
@@ -34,8 +37,18 @@ const cardVariants = {
 
 const tabTransition = { type: 'spring' as const, stiffness: 300, damping: 30 }
 
-function useStore() {
+function useStore(session: Session | null) {
   const [data, setData] = useState<UserData>(store.load)
+  const [synced, setSynced] = useState(false)
+
+  useEffect(() => {
+    if (!session) return
+    store.loadRemote().then(remote => {
+      setData(remote)
+      setSynced(true)
+    })
+  }, [session])
+
   const update = useCallback((fn: (d: UserData) => UserData) => {
     setData(prev => {
       const next = fn(prev)
@@ -43,7 +56,7 @@ function useStore() {
       return next
     })
   }, [])
-  return [data, update] as const
+  return [data, update, synced] as const
 }
 
 // ─── Splash / Profile Setup ────────────────────────
@@ -110,7 +123,7 @@ function ProfileSetup({ onDone }: { onDone: (name: string, date: string) => void
               value={name}
               onChange={e => setName(e.target.value)}
               placeholder="e.g. Alex"
-              className="w-full bg-slate-800/80 border border-slate-700/50 rounded-lg px-3 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500 transition-all"
+              className="w-full bg-slate-800/80 border border-slate-700/50 rounded-xl px-4 py-3 text-base text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500 transition-all"
             />
           </div>
           <div>
@@ -119,13 +132,13 @@ function ProfileSetup({ onDone }: { onDone: (name: string, date: string) => void
               type="date"
               value={date}
               onChange={e => setDate(e.target.value)}
-              className="w-full bg-slate-800/80 border border-slate-700/50 rounded-lg px-3 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500 transition-all"
+              className="w-full bg-slate-800/80 border border-slate-700/50 rounded-xl px-4 py-3 text-base text-white focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500 transition-all"
             />
           </div>
           <motion.button
             onClick={() => name.trim() && onDone(name.trim(), date)}
             disabled={!name.trim()}
-            className="w-full bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold py-2.5 rounded-lg transition-colors"
+            className="w-full bg-cyan-600 active:bg-cyan-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-xl transition-colors touch-manipulation"
             whileTap={{ scale: 0.97 }}
           >
             Start Training
@@ -139,8 +152,14 @@ function ProfileSetup({ onDone }: { onDone: (name: string, date: string) => void
 // ─── Week Selector ────────────────────────
 
 function WeekSelector({ current, setCurrent, completedIds }: { current: number; setCurrent: (n: number) => void; completedIds: Set<string> }) {
+  const scrollRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = scrollRef.current?.querySelector(`[data-week="${current}"]`) as HTMLElement | null
+    el?.scrollIntoView({ inline: 'center', behavior: 'smooth', block: 'nearest' })
+  }, [current])
+
   return (
-    <div className="flex gap-1.5 overflow-x-auto pb-2 px-4 scrollbar-none">
+    <div ref={scrollRef} className="flex gap-1 overflow-x-auto pb-2 px-3 scrollbar-none">
       {plan.map(week => {
         const done = week.workouts.filter(w => completedIds.has(w.id)).length
         const total = week.workouts.length
@@ -149,26 +168,27 @@ function WeekSelector({ current, setCurrent, completedIds }: { current: number; 
         return (
           <button
             key={week.number}
+            data-week={week.number}
             onClick={() => setCurrent(week.number)}
-            className="flex-shrink-0 flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-lg text-xs relative"
+            className="flex-shrink-0 flex flex-col items-center gap-0.5 min-w-[2.5rem] py-2 rounded-xl text-xs relative touch-manipulation"
           >
             {active && (
               <motion.div
                 layoutId="activeWeek"
-                className="absolute inset-0 bg-cyan-600 rounded-lg"
+                className="absolute inset-0 bg-cyan-600 rounded-xl"
                 transition={{ type: 'spring', stiffness: 400, damping: 30 }}
               />
             )}
-            <span className={`font-bold relative z-10 ${active ? 'text-white' : 'text-slate-400'}`}>{week.number}</span>
+            <span className={`font-bold relative z-10 text-[13px] ${active ? 'text-white' : 'text-slate-400'}`}>{week.number}</span>
             <span className="relative z-10">
               {pct === 1 ? (
-                <CheckIcon className={`w-3 h-3 ${active ? 'text-white' : 'text-cyan-400'}`} />
+                <CheckIcon className={`w-3.5 h-3.5 ${active ? 'text-white' : 'text-cyan-400'}`} />
               ) : pct > 0 ? (
-                <div className="w-4 h-0.5 bg-slate-600 rounded-full overflow-hidden">
+                <div className="w-5 h-1 bg-slate-600 rounded-full overflow-hidden">
                   <div className="h-full bg-cyan-400 rounded-full" style={{ width: `${pct * 100}%` }} />
                 </div>
               ) : (
-                <span className="w-4 h-0.5 block" />
+                <span className="w-5 h-1 block" />
               )}
             </span>
           </button>
@@ -211,8 +231,7 @@ function WorkoutCard({ workout, done, swapMode, swapSelected, index, onToggle, o
       initial="hidden"
       animate="visible"
       whileTap={{ scale: 0.97 }}
-      whileHover={{ scale: 1.01 }}
-      className={`w-full text-left p-3 rounded-xl transition-colors relative overflow-hidden ${
+      className={`w-full text-left p-3.5 rounded-xl transition-colors relative overflow-hidden touch-manipulation ${
         swapSelected
           ? 'glass-card swap-pulse border border-violet-500/50'
           : done
@@ -370,8 +389,8 @@ function WeekView({ week, resolvedWorkouts, completedIds, swapMode, swapSelected
             )}
             <motion.button
               onClick={onToggleSwapMode}
-              className={`p-1.5 rounded-lg transition-colors ${
-                swapMode ? 'bg-violet-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+              className={`p-2 rounded-lg transition-colors touch-manipulation ${
+                swapMode ? 'bg-violet-600 text-white' : 'bg-slate-800 text-slate-400 active:bg-slate-700'
               }`}
               whileTap={{ scale: 0.9 }}
               title={swapMode ? 'Cancel swap' : 'Swap workouts'}
@@ -510,7 +529,7 @@ function ProgressView({ completedIds }: { completedIds: Set<string> }) {
 
 // ─── Profile View ────────────────────────
 
-function ProfileView({ data, profile, update }: { data: UserData; profile: string; update: (fn: (d: UserData) => UserData) => void }) {
+function ProfileView({ data, profile, update, onSignOut }: { data: UserData; profile: string; update: (fn: (d: UserData) => UserData) => void; onSignOut: () => void }) {
   return (
     <motion.div
       className="px-4 pb-6 space-y-4"
@@ -536,11 +555,11 @@ function ProfileView({ data, profile, update }: { data: UserData; profile: strin
                 <span className="text-white font-bold">{p.name}</span>
                 {p.name === profile && <span className="text-[10px] text-cyan-400 font-bold">ACTIVE</span>}
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-3">
                 {p.name !== profile && (
-                  <button onClick={() => update(d => store.setActiveProfile(d, p.name))} className="text-xs text-cyan-400 hover:text-cyan-300">Switch</button>
+                  <button onClick={() => { update(d => store.setActiveProfile(d, p.name)); store.syncSetActiveProfile(p.name) }} className="text-sm px-3 py-1.5 text-cyan-400 active:text-cyan-300 touch-manipulation">Switch</button>
                 )}
-                <button onClick={() => { if (confirm(`Delete ${p.name}?`)) update(d => store.deleteProfile(d, p.name)) }} className="text-xs text-red-400 hover:text-red-300">Delete</button>
+                <button onClick={() => { if (confirm(`Delete ${p.name}?`)) { update(d => store.deleteProfile(d, p.name)); store.syncDeleteProfile(p.name) } }} className="text-sm px-3 py-1.5 text-red-400 active:text-red-300 touch-manipulation">Delete</button>
               </div>
             </div>
             <div className="text-xs text-slate-500">Started: {p.startDate}</div>
@@ -548,6 +567,13 @@ function ProfileView({ data, profile, update }: { data: UserData; profile: strin
           </motion.div>
         )
       })}
+      <motion.button
+        onClick={onSignOut}
+        className="w-full py-3 rounded-xl bg-slate-800 text-slate-400 font-medium active:bg-slate-700 transition-colors touch-manipulation mt-4"
+        whileTap={{ scale: 0.97 }}
+      >
+        Sign Out
+      </motion.button>
     </motion.div>
   )
 }
@@ -582,7 +608,7 @@ function AddProfileModal({ onDone, onClose }: { onDone: (name: string, date: str
             onChange={e => setName(e.target.value)}
             placeholder="e.g. Sarah"
             autoFocus
-            className="w-full bg-slate-800/80 border border-slate-700/50 rounded-lg px-3 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500 transition-all"
+            className="w-full bg-slate-800/80 border border-slate-700/50 rounded-xl px-4 py-3 text-base text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500 transition-all"
           />
         </div>
         <div>
@@ -591,16 +617,16 @@ function AddProfileModal({ onDone, onClose }: { onDone: (name: string, date: str
             type="date"
             value={date}
             onChange={e => setDate(e.target.value)}
-            className="w-full bg-slate-800/80 border border-slate-700/50 rounded-lg px-3 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500 transition-all"
+            className="w-full bg-slate-800/80 border border-slate-700/50 rounded-xl px-4 py-3 text-base text-white focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500 transition-all"
           />
         </div>
         <div className="flex gap-3">
-          <motion.button whileTap={{ scale: 0.97 }} onClick={onClose} className="flex-1 py-2.5 rounded-lg bg-slate-800 text-slate-300 font-medium hover:bg-slate-700 transition-colors">Cancel</motion.button>
+          <motion.button whileTap={{ scale: 0.97 }} onClick={onClose} className="flex-1 py-3 rounded-xl bg-slate-800 text-slate-300 font-medium active:bg-slate-700 transition-colors touch-manipulation">Cancel</motion.button>
           <motion.button
             whileTap={{ scale: 0.97 }}
             onClick={() => name.trim() && onDone(name.trim(), date)}
             disabled={!name.trim()}
-            className="flex-1 py-2.5 rounded-lg bg-cyan-600 text-white font-semibold hover:bg-cyan-500 disabled:opacity-40 transition-colors"
+            className="flex-1 py-3 rounded-xl bg-cyan-600 text-white font-semibold active:bg-cyan-500 disabled:opacity-40 transition-colors touch-manipulation"
           >Add</motion.button>
         </div>
       </motion.div>
@@ -613,7 +639,38 @@ function AddProfileModal({ onDone, onClose }: { onDone: (name: string, date: str
 type Tab = 'plan' | 'progress' | 'profile'
 
 export default function App() {
-  const [data, update] = useStore()
+  const [session, setSession] = useState<Session | null>(null)
+  const [authChecked, setAuthChecked] = useState(false)
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session: s } }) => {
+      setSession(s)
+      setAuthChecked(true)
+    })
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
+      setSession(s)
+    })
+    return () => subscription.unsubscribe()
+  }, [])
+
+  if (!authChecked) {
+    return (
+      <div className="min-h-svh bg-slate-950 flex items-center justify-center">
+        <div className="bg-mesh" />
+        <div className="text-slate-500 text-sm">Loading...</div>
+      </div>
+    )
+  }
+
+  if (!session) {
+    return <Auth onAuth={() => {}} />
+  }
+
+  return <AppInner session={session} />
+}
+
+function AppInner({ session }: { session: Session }) {
+  const [data, update, synced] = useStore(session)
   const [currentWeek, setCurrentWeek] = useState(1)
   const [tab, setTab] = useState<Tab>('plan')
   const [showAddProfile, setShowAddProfile] = useState(false)
@@ -669,11 +726,28 @@ export default function App() {
     prevCompletedRef.current = currentCount
   }, [completedIds.size])
 
+  async function handleSignOut() {
+    await supabase.auth.signOut()
+    store.save(store.defaultData())
+  }
+
+  if (!synced) {
+    return (
+      <div className="min-h-svh bg-slate-950 flex items-center justify-center">
+        <div className="bg-mesh" />
+        <div className="text-slate-500 text-sm">Syncing...</div>
+      </div>
+    )
+  }
+
   if (!profile || data.profiles.length === 0) {
     return (
       <>
         <div className="bg-mesh" />
-        <ProfileSetup onDone={(name, date) => update(d => store.addProfile(d, name, date))} />
+        <ProfileSetup onDone={(name, date) => {
+          update(d => store.addProfile(d, name, date))
+          store.syncAddProfile(name, date, true)
+        }} />
       </>
     )
   }
@@ -681,10 +755,17 @@ export default function App() {
   const week = plan.find(w => w.number === currentWeek) || plan[0]
   const resolvedWorkouts = store.resolveWeekWorkouts(data, profile, currentWeek, week.workouts)
 
+  function handleToggle(id: string) {
+    const isCompleting = !completedIds.has(id)
+    update(d => store.toggleWorkout(d, profile!, id))
+    store.syncToggleWorkout(profile!, id, isCompleting)
+  }
+
   function handleSwapSelect(id: string) {
     if (!swapSelectedId) { setSwapSelectedId(id); return }
     if (swapSelectedId === id) { setSwapSelectedId(null); return }
     update(d => store.swapWorkouts(d, profile!, currentWeek, swapSelectedId, id))
+    store.syncSwapWorkouts(profile!, currentWeek, swapSelectedId, id)
     setSwapSelectedId(null)
     setSwapMode(false)
   }
@@ -708,11 +789,11 @@ export default function App() {
   ]
 
   return (
-    <div className="min-h-svh bg-slate-950 flex flex-col max-w-lg mx-auto relative">
+    <div className="h-full bg-slate-950 flex flex-col max-w-lg mx-auto relative md:max-w-2xl">
       <div className="bg-mesh" />
       <ConfettiCanvas confettiRef={confettiRef} />
 
-      <header className="sticky top-0 z-20 glass">
+      <header className="shrink-0 z-20 glass" style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
         <div className="flex items-center justify-between px-4 py-3">
           <motion.h1
             className="text-base font-bold text-white tracking-tight"
@@ -725,9 +806,9 @@ export default function App() {
             {data.profiles.map(p => (
               <motion.button
                 key={p.name}
-                onClick={() => update(d => store.setActiveProfile(d, p.name))}
-                className={`px-2.5 py-1 rounded-full text-xs font-semibold transition-colors ${
-                  p.name === profile ? 'bg-cyan-600 text-white' : 'bg-slate-800/80 text-slate-400 hover:bg-slate-700'
+                onClick={() => { update(d => store.setActiveProfile(d, p.name)); store.syncSetActiveProfile(p.name) }}
+                className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors touch-manipulation ${
+                  p.name === profile ? 'bg-cyan-600 text-white' : 'bg-slate-800/80 text-slate-400 active:bg-slate-700'
                 }`}
                 whileTap={{ scale: 0.95 }}
               >
@@ -736,7 +817,7 @@ export default function App() {
             ))}
             <motion.button
               onClick={() => setShowAddProfile(true)}
-              className="w-6 h-6 rounded-full bg-slate-800/80 text-slate-400 hover:bg-slate-700 flex items-center justify-center text-sm"
+              className="w-8 h-8 rounded-full bg-slate-800/80 text-slate-400 active:bg-slate-700 flex items-center justify-center text-sm touch-manipulation"
               whileTap={{ scale: 0.9 }}
             >+</motion.button>
           </div>
@@ -746,7 +827,7 @@ export default function App() {
         )}
       </header>
 
-      <main className="flex-1 pt-4 overflow-y-auto relative z-10">
+      <main className="flex-1 pt-4 overflow-y-auto relative z-10 overscroll-contain" style={{ WebkitOverflowScrolling: 'touch' } as React.CSSProperties}>
         <AnimatePresence mode="wait">
           {tab === 'plan' && (
             <WeekView
@@ -757,7 +838,7 @@ export default function App() {
               swapMode={swapMode}
               swapSelectedId={swapSelectedId}
               direction={weekDirection}
-              onToggle={id => update(d => store.toggleWorkout(d, profile, id))}
+              onToggle={handleToggle}
               onSwapSelect={handleSwapSelect}
               onToggleSwapMode={() => { setSwapMode(!swapMode); setSwapSelectedId(null) }}
               onSwipeWeek={swipeWeek}
@@ -767,7 +848,7 @@ export default function App() {
             <ProgressView key="progress" completedIds={completedIds} />
           )}
           {tab === 'profile' && (
-            <ProfileView key="profile" data={data} profile={profile} update={update} />
+            <ProfileView key="profile" data={data} profile={profile} update={update} onSignOut={handleSignOut} />
           )}
         </AnimatePresence>
       </main>
@@ -777,6 +858,7 @@ export default function App() {
           <AddProfileModal
             onDone={(name, date) => {
               update(d => store.addProfile(d, name, date))
+              store.syncAddProfile(name, date, data.profiles.length === 0)
               setShowAddProfile(false)
             }}
             onClose={() => setShowAddProfile(false)}
@@ -784,13 +866,13 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      <nav className="sticky bottom-0 z-20 glass flex border-t border-slate-800/50">
+      <nav className="shrink-0 z-20 glass flex border-t border-slate-800/50" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
         {tabItems.map(([t, Icon, label]) => (
           <motion.button
             key={t}
             onClick={() => { setTab(t); setSwapMode(false); setSwapSelectedId(null) }}
-            className={`flex-1 flex flex-col items-center gap-0.5 py-2 pb-3 relative transition-colors ${
-              tab === t ? 'text-cyan-400' : 'text-slate-500 hover:text-slate-400'
+            className={`flex-1 flex flex-col items-center gap-0.5 py-2.5 relative transition-colors touch-manipulation ${
+              tab === t ? 'text-cyan-400' : 'text-slate-500 active:text-slate-400'
             }`}
             whileTap={{ scale: 0.95 }}
           >
