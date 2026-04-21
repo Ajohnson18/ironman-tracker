@@ -91,6 +91,25 @@ export function XIcon({ className = cn }: { className?: string }) {
   )
 }
 
+export function MoveIcon({ className = cn }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 2v20M2 12h20" />
+      <path d="m16 4-4-2-4 2" /><path d="m16 20-4 2-4-2" />
+      <path d="m4 8-2 4 2 4" /><path d="m20 8 2 4-2 4" />
+    </svg>
+  )
+}
+
+export function ResetIcon({ className = cn }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+      <path d="M3 3v5h5" />
+    </svg>
+  )
+}
+
 const SPORT_ICONS: Record<Sport, typeof SwimIcon> = { swim: SwimIcon, bike: BikeIcon, run: RunIcon }
 
 export function SportIcon({ sport, className }: { sport: Sport; className?: string }) {

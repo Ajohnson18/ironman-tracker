@@ -4,7 +4,8 @@ import {
   setActiveProfileRemote,
   deleteProfileRemote,
   toggleWorkoutRemote,
-  addSwapRemote,
+  setDayOverrideRemote,
+  resetWeekRemote,
 } from './lib/supabase'
 
 const STORAGE_KEY = 'ironman-tracker'
@@ -20,17 +21,18 @@ export interface CompletedWorkout {
   notes?: string
 }
 
-export type SwapMap = Record<number, [string, string][]>
+// profile → weekNum → workoutId → newDay
+export type DayOverrideMap = Record<number, Record<string, string>>
 
 export interface UserData {
   profiles: Profile[]
   activeProfile: string | null
   completed: Record<string, CompletedWorkout[]>
-  swaps: Record<string, SwapMap>
+  dayOverrides: Record<string, DayOverrideMap>
 }
 
 export function defaultData(): UserData {
-  return { profiles: [], activeProfile: null, completed: {}, swaps: {} }
+  return { profiles: [], activeProfile: null, completed: {}, dayOverrides: {} }
 }
 
 export function load(): UserData {
@@ -38,7 +40,7 @@ export function load(): UserData {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return defaultData()
     const d = JSON.parse(raw)
-    if (!d.swaps) d.swaps = {}
+    if (!d.dayOverrides) d.dayOverrides = d.swaps ? {} : {}
     return d
   } catch {
     return defaultData()
@@ -75,8 +77,12 @@ export function syncToggleWorkout(profileName: string, workoutId: string, comple
   toggleWorkoutRemote(profileName, workoutId, completing).catch(() => {})
 }
 
-export function syncSwapWorkouts(profileName: string, weekNum: number, idA: string, idB: string) {
-  addSwapRemote(profileName, weekNum, idA, idB).catch(() => {})
+export function syncMoveWorkout(profileName: string, weekNum: number, workoutId: string, newDay: string) {
+  setDayOverrideRemote(profileName, weekNum, workoutId, newDay).catch(() => {})
+}
+
+export function syncResetWeek(profileName: string, weekNum: number) {
+  resetWeekRemote(profileName, weekNum).catch(() => {})
 }
 
 export function getCompletedIds(data: UserData, profile: string): Set<string> {
@@ -108,61 +114,48 @@ export function setActiveProfile(data: UserData, name: string): UserData {
 export function deleteProfile(data: UserData, name: string): UserData {
   const profiles = data.profiles.filter(p => p.name !== name)
   const completed = { ...data.completed }
-  const swaps = { ...data.swaps }
+  const dayOverrides = { ...data.dayOverrides }
   delete completed[name]
-  delete swaps[name]
+  delete dayOverrides[name]
   return {
     ...data,
     profiles,
     completed,
-    swaps,
+    dayOverrides,
     activeProfile: data.activeProfile === name ? (profiles[0]?.name || null) : data.activeProfile,
   }
 }
 
-export function swapWorkouts(data: UserData, profile: string, weekNum: number, idA: string, idB: string): UserData {
-  const profileSwaps = { ...(data.swaps[profile] || {}) }
-  const weekSwaps = [...(profileSwaps[weekNum] || [])]
-  weekSwaps.push([idA, idB])
-  profileSwaps[weekNum] = weekSwaps
-  return { ...data, swaps: { ...data.swaps, [profile]: profileSwaps } }
+export function moveWorkout(data: UserData, profile: string, weekNum: number, workoutId: string, newDay: string): UserData {
+  const profileOverrides = { ...(data.dayOverrides[profile] || {}) }
+  const weekOverrides = { ...(profileOverrides[weekNum] || {}) }
+  weekOverrides[workoutId] = newDay
+  profileOverrides[weekNum] = weekOverrides
+  return { ...data, dayOverrides: { ...data.dayOverrides, [profile]: profileOverrides } }
 }
 
-export function getSwappedDay(data: UserData, profile: string, weekNum: number, workoutId: string, originalDay: string): string {
-  const weekSwaps = data.swaps[profile]?.[weekNum] || []
-  let day = originalDay
-  const dayMap = new Map<string, string>()
+export function resetWeek(data: UserData, profile: string, weekNum: number): UserData {
+  const profileOverrides = { ...(data.dayOverrides[profile] || {}) }
+  delete profileOverrides[weekNum]
+  return { ...data, dayOverrides: { ...data.dayOverrides, [profile]: profileOverrides } }
+}
 
-  for (const [idA, idB] of weekSwaps) {
-    const dayA = dayMap.get(idA)
-    const dayB = dayMap.get(idB)
-    if (dayA !== undefined || dayB !== undefined) {
-      const resolvedA = dayA ?? idA
-      const resolvedB = dayB ?? idB
-      dayMap.set(idA, resolvedB)
-      dayMap.set(idB, resolvedA)
-    } else {
-      dayMap.set(idA, idB)
-      dayMap.set(idB, idA)
-    }
-  }
-
-  if (dayMap.has(workoutId)) {
-    const partnerId = dayMap.get(workoutId)!
-    return partnerId
-  }
-  return day
+export function hasWeekOverrides(data: UserData, profile: string, weekNum: number): boolean {
+  const weekOverrides = data.dayOverrides[profile]?.[weekNum]
+  return !!weekOverrides && Object.keys(weekOverrides).length > 0
 }
 
 export interface ResolvedWorkout {
   id: string
   day: string
+  originalDay: string
   sport: string
   type: string
   title: string
   description: string
   hasTransitionRun?: boolean
   transitionDesc?: string
+  moved: boolean
 }
 
 export function resolveWeekWorkouts(
@@ -171,24 +164,15 @@ export function resolveWeekWorkouts(
   weekNum: number,
   workouts: { id: string; day: string; sport: string; type: string; title: string; description: string; hasTransitionRun?: boolean; transitionDesc?: string }[]
 ): ResolvedWorkout[] {
-  const weekSwaps = data.swaps[profile]?.[weekNum] || []
-  if (weekSwaps.length === 0) return workouts
+  const overrides = data.dayOverrides[profile]?.[weekNum] || {}
 
-  const idToWorkout = new Map(workouts.map(w => [w.id, w]))
-  const dayOverrides = new Map<string, string>()
-
-  for (const [idA, idB] of weekSwaps) {
-    const wA = idToWorkout.get(idA)
-    const wB = idToWorkout.get(idB)
-    if (!wA || !wB) continue
-    const currentDayA = dayOverrides.get(idA) ?? wA.day
-    const currentDayB = dayOverrides.get(idB) ?? wB.day
-    dayOverrides.set(idA, currentDayB)
-    dayOverrides.set(idB, currentDayA)
-  }
-
-  return workouts.map(w => ({
-    ...w,
-    day: dayOverrides.get(w.id) ?? w.day,
-  }))
+  return workouts.map(w => {
+    const newDay = overrides[w.id]
+    return {
+      ...w,
+      originalDay: w.day,
+      day: newDay ?? w.day,
+      moved: !!newDay,
+    }
+  })
 }

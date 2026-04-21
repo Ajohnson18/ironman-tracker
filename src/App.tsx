@@ -3,7 +3,7 @@ import { motion, AnimatePresence, useMotionValue, useTransform } from 'motion/re
 import { plan, type Week, type Sport } from './data/plan'
 import * as store from './store'
 import type { UserData } from './store'
-import { SportIcon, ClipboardIcon, ChartIcon, UserIcon, CheckIcon, SwapIcon, XIcon, SwimIcon, BikeIcon, RunIcon } from './icons'
+import { SportIcon, ClipboardIcon, ChartIcon, UserIcon, CheckIcon, MoveIcon, ResetIcon, XIcon, SwimIcon, BikeIcon, RunIcon } from './icons'
 import { AnimatedNumber, AnimatedPercent, AnimatedProgressBar } from './components/AnimatedNumber'
 import { ConfettiCanvas, useConfetti } from './components/Confetti'
 import { ProgressRing3D } from './components/ProgressRing3D'
@@ -203,20 +203,20 @@ function WeekSelector({ current, setCurrent, completedIds }: { current: number; 
 interface WorkoutCardProps {
   workout: store.ResolvedWorkout
   done: boolean
-  swapMode: boolean
-  swapSelected: boolean
+  moveMode: boolean
+  moveSelected: boolean
   index: number
   onToggle: () => void
-  onSwapSelect: () => void
+  onMoveSelect: () => void
 }
 
-function WorkoutCard({ workout, done, swapMode, swapSelected, index, onToggle, onSwapSelect }: WorkoutCardProps) {
+function WorkoutCard({ workout, done, moveMode, moveSelected, index, onToggle, onMoveSelect }: WorkoutCardProps) {
   const sport = workout.sport as Sport
   const [showRipple, setShowRipple] = useState(false)
 
   const handleClick = () => {
-    if (swapMode) {
-      onSwapSelect()
+    if (moveMode) {
+      onMoveSelect()
     } else {
       if (!done) setShowRipple(true)
       onToggle()
@@ -232,7 +232,7 @@ function WorkoutCard({ workout, done, swapMode, swapSelected, index, onToggle, o
       animate="visible"
       whileTap={{ scale: 0.97 }}
       className={`w-full text-left p-3.5 rounded-xl transition-colors relative overflow-hidden touch-manipulation ${
-        swapSelected
+        moveSelected
           ? 'glass-card swap-pulse border border-violet-500/50'
           : done
             ? 'glass-card opacity-50'
@@ -246,15 +246,15 @@ function WorkoutCard({ workout, done, swapMode, swapSelected, index, onToggle, o
         />
       )}
       <div className="flex items-start gap-3 relative z-10">
-        {swapMode ? (
+        {moveMode ? (
           <motion.div
             className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 mt-0.5 ${
-              swapSelected ? 'bg-violet-600 border-violet-600' : 'border-slate-600'
+              moveSelected ? 'bg-violet-600 border-violet-600' : 'border-slate-600'
             }`}
-            animate={swapSelected ? { scale: [1, 1.15, 1] } : {}}
+            animate={moveSelected ? { scale: [1, 1.15, 1] } : {}}
             transition={{ repeat: Infinity, duration: 1.5 }}
           >
-            {swapSelected && <SwapIcon className="w-3 h-3 text-white" />}
+            {moveSelected && <MoveIcon className="w-3 h-3 text-white" />}
           </motion.div>
         ) : (
           <motion.div
@@ -273,11 +273,14 @@ function WorkoutCard({ workout, done, swapMode, swapSelected, index, onToggle, o
             <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${SPORT_BADGE[sport]}`}>
               {TYPE_LABEL[workout.type]}
             </span>
-            <span className={`font-semibold text-sm ${done && !swapMode ? 'text-slate-500 line-through' : 'text-white'}`}>
+            <span className={`font-semibold text-sm ${done && !moveMode ? 'text-slate-500 line-through' : 'text-white'}`}>
               {workout.title}
             </span>
+            {workout.moved && !moveMode && (
+              <span className="text-[9px] text-violet-400 font-medium">MOVED</span>
+            )}
           </div>
-          <p className={`text-xs ${done && !swapMode ? 'text-slate-600' : 'text-slate-400'}`}>{workout.description}</p>
+          <p className={`text-xs ${done && !moveMode ? 'text-slate-600' : 'text-slate-400'}`}>{workout.description}</p>
           {workout.hasTransitionRun && (
             <p className="text-xs text-orange-400/70 mt-0.5">+ T-Run: {workout.transitionDesc}</p>
           )}
@@ -293,16 +296,16 @@ interface DayGroupProps {
   day: string
   workouts: store.ResolvedWorkout[]
   completedIds: Set<string>
-  swapMode: boolean
-  swapSelectedId: string | null
+  moveMode: boolean
+  moveSelectedId: string | null
   indexOffset: number
   onToggle: (id: string) => void
-  onSwapSelect: (id: string) => void
+  onMoveSelect: (id: string) => void
 }
 
-function DayGroup({ day, workouts, completedIds, swapMode, swapSelectedId, indexOffset, onToggle, onSwapSelect }: DayGroupProps) {
+function DayGroup({ day, workouts, completedIds, moveMode, moveSelectedId, indexOffset, onToggle, onMoveSelect }: DayGroupProps) {
   if (workouts.length === 0) return null
-  const allDone = !swapMode && workouts.every(w => completedIds.has(w.id))
+  const allDone = !moveMode && workouts.every(w => completedIds.has(w.id))
   return (
     <div>
       <div className="flex items-center gap-2 mb-2 px-1">
@@ -319,11 +322,11 @@ function DayGroup({ day, workouts, completedIds, swapMode, swapSelectedId, index
             key={w.id}
             workout={w}
             done={completedIds.has(w.id)}
-            swapMode={swapMode}
-            swapSelected={swapSelectedId === w.id}
+            moveMode={moveMode}
+            moveSelected={moveSelectedId === w.id}
             index={indexOffset + i}
             onToggle={() => onToggle(w.id)}
-            onSwapSelect={() => onSwapSelect(w.id)}
+            onMoveSelect={() => onMoveSelect(w.id)}
           />
         ))}
       </div>
@@ -337,16 +340,19 @@ interface WeekViewProps {
   week: Week
   resolvedWorkouts: store.ResolvedWorkout[]
   completedIds: Set<string>
-  swapMode: boolean
-  swapSelectedId: string | null
+  moveMode: boolean
+  moveSelectedId: string | null
+  hasOverrides: boolean
   direction: number
   onToggle: (id: string) => void
-  onSwapSelect: (id: string) => void
-  onToggleSwapMode: () => void
+  onMoveSelect: (id: string) => void
+  onMoveToDay: (day: string) => void
+  onToggleMoveMode: () => void
+  onResetWeek: () => void
   onSwipeWeek: (delta: number) => void
 }
 
-function WeekView({ week, resolvedWorkouts, completedIds, swapMode, swapSelectedId, direction, onToggle, onSwapSelect, onToggleSwapMode, onSwipeWeek }: WeekViewProps) {
+function WeekView({ week, resolvedWorkouts, completedIds, moveMode, moveSelectedId, hasOverrides, direction, onToggle, onMoveSelect, onMoveToDay, onToggleMoveMode, onResetWeek, onSwipeWeek }: WeekViewProps) {
   const done = resolvedWorkouts.filter(w => completedIds.has(w.id)).length
   const total = resolvedWorkouts.length
   const dragX = useMotionValue(0)
@@ -388,15 +394,27 @@ function WeekView({ week, resolvedWorkouts, completedIds, swapMode, swapSelected
               </motion.span>
             )}
             <motion.button
-              onClick={onToggleSwapMode}
+              onClick={onToggleMoveMode}
               className={`p-2 rounded-lg transition-colors touch-manipulation ${
-                swapMode ? 'bg-violet-600 text-white' : 'bg-slate-800 text-slate-400 active:bg-slate-700'
+                moveMode ? 'bg-violet-600 text-white' : 'bg-slate-800 text-slate-400 active:bg-slate-700'
               }`}
               whileTap={{ scale: 0.9 }}
-              title={swapMode ? 'Cancel swap' : 'Swap workouts'}
+              title={moveMode ? 'Cancel move' : 'Move workouts'}
             >
-              {swapMode ? <XIcon className="w-4 h-4" /> : <SwapIcon className="w-4 h-4" />}
+              {moveMode ? <XIcon className="w-4 h-4" /> : <MoveIcon className="w-4 h-4" />}
             </motion.button>
+            {hasOverrides && !moveMode && (
+              <motion.button
+                onClick={onResetWeek}
+                className="p-2 rounded-lg bg-slate-800 text-amber-400 active:bg-slate-700 transition-colors touch-manipulation"
+                whileTap={{ scale: 0.9 }}
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                title="Reset week to original"
+              >
+                <ResetIcon className="w-4 h-4" />
+              </motion.button>
+            )}
           </div>
           <div className="text-right">
             <span className="text-sm font-mono text-cyan-400">
@@ -406,16 +424,41 @@ function WeekView({ week, resolvedWorkouts, completedIds, swapMode, swapSelected
           </div>
         </div>
         <AnimatePresence>
-          {swapMode && (
+          {moveMode && (
             <motion.div
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: 'auto', opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
               className="overflow-hidden"
             >
-              <div className="bg-violet-500/10 border border-violet-500/30 rounded-lg px-3 py-2 text-xs text-violet-300">
-                {swapSelectedId ? 'Tap another workout to swap with' : 'Tap a workout to select it for swapping'}
-              </div>
+              {moveSelectedId ? (
+                <div className="space-y-2">
+                  <div className="text-xs text-violet-300 px-1">Move to:</div>
+                  <div className="flex gap-1.5">
+                    {DAYS.map(day => {
+                      const selected = resolvedWorkouts.find(w => w.id === moveSelectedId)
+                      const isCurrent = selected?.day === day
+                      return (
+                        <button
+                          key={day}
+                          onClick={() => !isCurrent && onMoveToDay(day)}
+                          className={`flex-1 py-2 rounded-lg text-xs font-bold transition-colors touch-manipulation ${
+                            isCurrent
+                              ? 'bg-violet-600 text-white'
+                              : 'bg-slate-800 text-slate-400 active:bg-violet-600/50 active:text-violet-200'
+                          }`}
+                        >
+                          {day}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-violet-500/10 border border-violet-500/30 rounded-lg px-3 py-2 text-xs text-violet-300">
+                  Tap a workout to move it to a different day
+                </div>
+              )}
             </motion.div>
           )}
         </AnimatePresence>
@@ -430,11 +473,11 @@ function WeekView({ week, resolvedWorkouts, completedIds, swapMode, swapSelected
                 day={day}
                 workouts={dayWorkouts}
                 completedIds={completedIds}
-                swapMode={swapMode}
-                swapSelectedId={swapSelectedId}
+                moveMode={moveMode}
+                moveSelectedId={moveSelectedId}
                 indexOffset={offset}
                 onToggle={onToggle}
-                onSwapSelect={onSwapSelect}
+                onMoveSelect={onMoveSelect}
               />
             )
           })}
@@ -674,8 +717,8 @@ function AppInner({ session }: { session: Session }) {
   const [currentWeek, setCurrentWeek] = useState(1)
   const [tab, setTab] = useState<Tab>('plan')
   const [showAddProfile, setShowAddProfile] = useState(false)
-  const [swapMode, setSwapMode] = useState(false)
-  const [swapSelectedId, setSwapSelectedId] = useState<string | null>(null)
+  const [moveMode, setMoveMode] = useState(false)
+  const [moveSelectedId, setMoveSelectedId] = useState<string | null>(null)
   const [weekDirection, setWeekDirection] = useState(0)
   const prevCompletedRef = useRef<number>(0)
   const { ref: confettiRef, fire: fireConfetti } = useConfetti()
@@ -754,6 +797,7 @@ function AppInner({ session }: { session: Session }) {
 
   const week = plan.find(w => w.number === currentWeek) || plan[0]
   const resolvedWorkouts = store.resolveWeekWorkouts(data, profile, currentWeek, week.workouts)
+  const hasOverrides = store.hasWeekOverrides(data, profile, currentWeek)
 
   function handleToggle(id: string) {
     const isCompleting = !completedIds.has(id)
@@ -761,20 +805,27 @@ function AppInner({ session }: { session: Session }) {
     store.syncToggleWorkout(profile!, id, isCompleting)
   }
 
-  function handleSwapSelect(id: string) {
-    if (!swapSelectedId) { setSwapSelectedId(id); return }
-    if (swapSelectedId === id) { setSwapSelectedId(null); return }
-    update(d => store.swapWorkouts(d, profile!, currentWeek, swapSelectedId, id))
-    store.syncSwapWorkouts(profile!, currentWeek, swapSelectedId, id)
-    setSwapSelectedId(null)
-    setSwapMode(false)
+  function handleMoveSelect(id: string) {
+    setMoveSelectedId(prev => prev === id ? null : id)
+  }
+
+  function handleMoveToDay(day: string) {
+    if (!moveSelectedId) return
+    update(d => store.moveWorkout(d, profile!, currentWeek, moveSelectedId, day))
+    store.syncMoveWorkout(profile!, currentWeek, moveSelectedId, day)
+    setMoveSelectedId(null)
+  }
+
+  function handleResetWeek() {
+    update(d => store.resetWeek(d, profile!, currentWeek))
+    store.syncResetWeek(profile!, currentWeek)
   }
 
   function changeWeek(n: number) {
     setWeekDirection(n > currentWeek ? 1 : -1)
     setCurrentWeek(n)
-    setSwapMode(false)
-    setSwapSelectedId(null)
+    setMoveMode(false)
+    setMoveSelectedId(null)
   }
 
   function swipeWeek(delta: number) {
@@ -835,12 +886,15 @@ function AppInner({ session }: { session: Session }) {
               week={week}
               resolvedWorkouts={resolvedWorkouts}
               completedIds={completedIds}
-              swapMode={swapMode}
-              swapSelectedId={swapSelectedId}
+              moveMode={moveMode}
+              moveSelectedId={moveSelectedId}
+              hasOverrides={hasOverrides}
               direction={weekDirection}
               onToggle={handleToggle}
-              onSwapSelect={handleSwapSelect}
-              onToggleSwapMode={() => { setSwapMode(!swapMode); setSwapSelectedId(null) }}
+              onMoveSelect={handleMoveSelect}
+              onMoveToDay={handleMoveToDay}
+              onToggleMoveMode={() => { setMoveMode(!moveMode); setMoveSelectedId(null) }}
+              onResetWeek={handleResetWeek}
               onSwipeWeek={swipeWeek}
             />
           )}
@@ -870,7 +924,7 @@ function AppInner({ session }: { session: Session }) {
         {tabItems.map(([t, Icon, label]) => (
           <motion.button
             key={t}
-            onClick={() => { setTab(t); setSwapMode(false); setSwapSelectedId(null) }}
+            onClick={() => { setTab(t); setMoveMode(false); setMoveSelectedId(null) }}
             className={`flex-1 flex flex-col items-center gap-0.5 py-2.5 relative transition-colors touch-manipulation ${
               tab === t ? 'text-cyan-400' : 'text-slate-500 active:text-slate-400'
             }`}

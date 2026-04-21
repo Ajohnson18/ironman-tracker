@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import type { UserData, Profile, CompletedWorkout, SwapMap } from '../store'
+import type { UserData, Profile, CompletedWorkout, DayOverrideMap } from '../store'
 
 const url = import.meta.env.VITE_SUPABASE_URL as string
 const key = import.meta.env.VITE_SUPABASE_ANON_KEY as string
@@ -10,12 +10,12 @@ export const supabase = createClient(url, key)
 
 export async function fetchUserData(): Promise<UserData> {
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { profiles: [], activeProfile: null, completed: {}, swaps: {} }
+  if (!user) return { profiles: [], activeProfile: null, completed: {}, dayOverrides: {} }
 
-  const [{ data: profiles }, { data: completed }, { data: swaps }] = await Promise.all([
+  const [{ data: profiles }, { data: completed }, { data: overrides }] = await Promise.all([
     supabase.from('profiles').select('*').eq('user_id', user.id),
     supabase.from('completed_workouts').select('*').eq('user_id', user.id),
-    supabase.from('swaps').select('*').eq('user_id', user.id),
+    supabase.from('day_overrides').select('*').eq('user_id', user.id),
   ])
 
   const profileList: Profile[] = (profiles || []).map(p => ({
@@ -35,14 +35,14 @@ export async function fetchUserData(): Promise<UserData> {
     })
   }
 
-  const swapMap: Record<string, SwapMap> = {}
-  for (const s of swaps || []) {
-    if (!swapMap[s.profile_name]) swapMap[s.profile_name] = {}
-    if (!swapMap[s.profile_name][s.week_num]) swapMap[s.profile_name][s.week_num] = []
-    swapMap[s.profile_name][s.week_num].push([s.id_a, s.id_b])
+  const dayOverrideMap: Record<string, DayOverrideMap> = {}
+  for (const o of overrides || []) {
+    if (!dayOverrideMap[o.profile_name]) dayOverrideMap[o.profile_name] = {}
+    if (!dayOverrideMap[o.profile_name][o.week_num]) dayOverrideMap[o.profile_name][o.week_num] = {}
+    dayOverrideMap[o.profile_name][o.week_num][o.workout_id] = o.new_day
   }
 
-  return { profiles: profileList, activeProfile, completed: completedMap, swaps: swapMap }
+  return { profiles: profileList, activeProfile, completed: completedMap, dayOverrides: dayOverrideMap }
 }
 
 // ─── Profile operations ──────────
@@ -73,7 +73,7 @@ export async function deleteProfileRemote(name: string) {
   if (!user) return
   await supabase.from('profiles').delete().eq('user_id', user.id).eq('name', name)
   await supabase.from('completed_workouts').delete().eq('user_id', user.id).eq('profile_name', name)
-  await supabase.from('swaps').delete().eq('user_id', user.id).eq('profile_name', name)
+  await supabase.from('day_overrides').delete().eq('user_id', user.id).eq('profile_name', name)
 }
 
 // ─── Workout completion ──────────
@@ -95,16 +95,22 @@ export async function toggleWorkoutRemote(profileName: string, workoutId: string
   }
 }
 
-// ─── Swaps ──────────
+// ─── Day overrides (move workouts) ──────────
 
-export async function addSwapRemote(profileName: string, weekNum: number, idA: string, idB: string) {
+export async function setDayOverrideRemote(profileName: string, weekNum: number, workoutId: string, newDay: string) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return
-  await supabase.from('swaps').insert({
-    user_id: user.id,
-    profile_name: profileName,
-    week_num: weekNum,
-    id_a: idA,
-    id_b: idB,
-  })
+  await supabase.from('day_overrides').upsert(
+    { user_id: user.id, profile_name: profileName, week_num: weekNum, workout_id: workoutId, new_day: newDay },
+    { onConflict: 'user_id,profile_name,week_num,workout_id' }
+  )
+}
+
+export async function resetWeekRemote(profileName: string, weekNum: number) {
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return
+  await supabase.from('day_overrides').delete()
+    .eq('user_id', user.id)
+    .eq('profile_name', profileName)
+    .eq('week_num', weekNum)
 }
