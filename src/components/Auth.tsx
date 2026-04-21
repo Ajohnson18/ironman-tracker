@@ -79,7 +79,7 @@ export function Auth({ onAuth }: { onAuth: () => void }) {
             animate={{ opacity: 1 }}
             transition={{ delay: 1.1 }}
           >
-            20-week training plan by Matt Fitzgerald
+            20-week training plan
           </motion.p>
         </div>
 
